@@ -93,6 +93,7 @@ import {
   CssStyleSheet,
   asyncReduceBuffer,
   callbackReturnPromise,
+  getCwdFunction,
 } from '../'
 
 test('export const', (t) => {
@@ -211,6 +212,18 @@ test('callback', (t) => {
   getCwd((cwd) => {
     t.is(cwd, process.cwd())
   })
+
+  t.is(
+    getCwdFunction(
+      (cwd) => cwd.length,
+      30,
+      (input) => {
+        t.is(input, 30)
+        return 30 + 12
+      },
+    ),
+    process.cwd().length + 42,
+  )
 
   t.throws(
     // @ts-expect-error

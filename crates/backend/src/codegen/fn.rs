@@ -1,3 +1,5 @@
+use std::mem;
+
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::ToTokens;
 
@@ -12,7 +14,7 @@ impl TryToTokens for NapiFn {
     let intermediate_ident = get_intermediate_ident(&name_str);
     let args_len = self.args.len();
 
-    let (arg_conversions, arg_names) = self.gen_arg_conversions();
+    let (arg_conversions, arg_names, trait_def, trait_impl_def) = self.gen_arg_conversions();
     let receiver = self.gen_fn_receiver();
     let receiver_ret_name = Ident::new("_ret", Span::call_site());
     let ret = self.gen_fn_return(&receiver_ret_name);
@@ -65,7 +67,29 @@ impl TryToTokens for NapiFn {
         })
       }
     };
-
+    let mut new_stream = if !trait_def.is_empty() {
+      let mut new_item = syn::parse2::<syn::Item>(tokens.clone())?;
+      if let syn::Item::Fn(syn::ItemFn { ref mut block, .. }) = &mut new_item {
+        for (index, trait_def_item) in trait_def.iter().enumerate() {
+          let trait_impl_def_item = trait_impl_def[index].clone();
+          block.stmts.insert(
+            0,
+            syn::Stmt::Item(syn::parse2(quote! {
+              #trait_impl_def_item
+            })?),
+          );
+          block.stmts.insert(
+            0,
+            syn::Stmt::Item(syn::parse2(quote! {
+              #trait_def_item
+            })?),
+          );
+        }
+      }
+      new_item.to_token_stream()
+    } else {
+      tokens.clone()
+    };
     (quote! {
       #(#attrs)*
       #[doc(hidden)]
@@ -85,17 +109,25 @@ impl TryToTokens for NapiFn {
 
       #register
     })
-    .to_tokens(tokens);
-
+    .to_tokens(&mut new_stream);
+    mem::swap(tokens, &mut new_stream);
     Ok(())
   }
 }
 
 impl NapiFn {
-  fn gen_arg_conversions(&self) -> (Vec<TokenStream>, Vec<TokenStream>) {
-    let mut arg_conversions = vec![];
-    let mut args = vec![];
-
+  fn gen_arg_conversions(
+    &self,
+  ) -> (
+    Vec<TokenStream>,
+    Vec<TokenStream>,
+    Vec<TokenStream>,
+    Vec<TokenStream>,
+  ) {
+    let mut arg_conversions = Vec::with_capacity(self.args.len());
+    let mut args = Vec::with_capacity(self.args.len());
+    let mut trait_def = Vec::with_capacity(self.args.len());
+    let mut trait_impl_def = Vec::with_capacity(self.args.len());
     // fetch this
     if let Some(parent) = &self.parent {
       match self.fn_self {
@@ -116,6 +148,7 @@ impl NapiFn {
     }
 
     let mut skipped_arg_count = 0;
+    let mut trait_name_count = 0;
     self.args.iter().enumerate().for_each(|(i, arg)| {
       let i = i - skipped_arg_count;
       let ident = Ident::new(&format!("arg{}", i), Span::call_site());
@@ -157,11 +190,49 @@ impl NapiFn {
         NapiFnArgKind::Callback(cb) => {
           arg_conversions.push(self.gen_cb_arg_conversion(&ident, i, cb));
           args.push(quote! { #ident });
+          if !cb.pure_fn {
+            let generic_args = &cb.args;
+            // T of <T>
+            let generic_name = Ident::new(&cb.generic_name, Span::call_site());
+            let raw_args_with_type = &cb.args.iter().enumerate().map(|(i, t)| {
+              let arg_name = Ident::new(&format!("arg{}", i), Span::call_site());
+              quote! { #arg_name: #t }
+            }).collect::<Vec<proc_macro2::TokenStream>>();
+            let raw_args = &cb.args.iter().enumerate().map(|(i, _)| {
+              Ident::new(&format!("arg{}", i), Span::call_site())
+            }).collect::<Vec<proc_macro2::Ident>>();
+            let raw_ret_type = &cb.raw_ret;
+
+            let fn_with_args_ret = if raw_ret_type.is_some() {
+              quote! { fn call(&self, #(#raw_args_with_type),*)-> #raw_ret_type }
+            } else {
+              quote! { fn call(&self, #(#raw_args_with_type),*) }
+            };
+            let fn_generic = if raw_ret_type.is_some() {
+              quote! { Fn(#(#generic_args),*)-> #raw_ret_type }
+            } else {
+              quote! { Fn(#(#generic_args),*) }
+            };
+            let trait_name = Ident::new(&format!("FunctionCall{}", trait_name_count), Span::call_site());
+            trait_def.push(quote! {
+              trait #trait_name {
+                #fn_with_args_ret;
+              }
+            });
+            trait_impl_def.push(quote! {
+              impl <#generic_name: #fn_generic> #trait_name for napi::bindgen_prelude::Function<#generic_name> {
+                #fn_with_args_ret {
+                  (self.inner)(#(#raw_args), *)
+                }
+              }
+            });
+            trait_name_count += 1;
+          }
         }
       }
     });
 
-    (arg_conversions, args)
+    (arg_conversions, args, trait_def, trait_impl_def)
   }
 
   fn gen_ty_arg_conversion(
@@ -231,9 +302,8 @@ impl NapiFn {
       None => quote! { Ok(()) },
     };
 
-    quote! {
-      napi::bindgen_prelude::assert_type_of!(env, cb.get_arg(#index), napi::bindgen_prelude::ValueType::Function)?;
-      let #arg_name = |#(#inputs),*| {
+    let lambda = quote! {
+      |#(#inputs),*| {
         let args = vec![
           #(#arg_conversions),*
         ];
@@ -253,7 +323,20 @@ impl NapiFn {
         )?;
 
         #ret
-      };
+      }
+    };
+    if cb.pure_fn {
+      quote! {
+        #[cfg(any(debug_assertions, feature = "strict"))]
+        napi::bindgen_prelude::assert_type_of!(env, cb.get_arg(#index), napi::bindgen_prelude::ValueType::Function)?;
+        let #arg_name = #lambda;
+      }
+    } else {
+      quote! {
+        #[cfg(any(debug_assertions, feature = "strict"))]
+        napi::bindgen_prelude::assert_type_of!(env, cb.get_arg(#index), napi::bindgen_prelude::ValueType::Function)?;
+        let #arg_name = Function { inner: #lambda };
+      }
     }
   }
 

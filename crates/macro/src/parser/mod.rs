@@ -17,7 +17,10 @@ use proc_macro2::{Ident, TokenStream, TokenTree};
 use quote::ToTokens;
 use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream, Result as SynResult};
-use syn::{Attribute, Signature, Type, Visibility};
+use syn::{
+  AngleBracketedGenericArguments, Attribute, Path, PathSegment, Signature, Type, TypePath,
+  Visibility,
+};
 
 use crate::parser::attrs::{check_recorded_struct_for_impl, record_struct};
 
@@ -198,20 +201,21 @@ fn extract_path_ident(path: &syn::Path) -> BindgenResult<Ident> {
 
 fn extract_callback_trait_types(
   arguments: &syn::PathArguments,
-) -> BindgenResult<(Vec<syn::Type>, Option<syn::Type>)> {
+) -> BindgenResult<(Vec<syn::Type>, Option<TokenStream>, Option<syn::Type>)> {
   match arguments {
     // <T: Fn>
-    syn::PathArguments::None => Ok((vec![], None)),
+    syn::PathArguments::None => Ok((vec![], None, None)),
     syn::PathArguments::AngleBracketed(_) => {
       bail_span!(arguments, "use parentheses for napi callback trait")
     }
     syn::PathArguments::Parenthesized(arguments) => {
       let args = arguments.inputs.iter().cloned().collect::<Vec<_>>();
-
+      let raw_return_type;
       let ret = match &arguments.output {
         syn::ReturnType::Type(_, ret_ty) => {
           let ret_ty = &**ret_ty;
           if let Some(ty_of_result) = extract_result_ty(ret_ty)? {
+            raw_return_type = Some(quote! { napi::Result<#ty_of_result> });
             if ty_of_result.to_token_stream().to_string() == "()" {
               None
             } else {
@@ -229,7 +233,7 @@ fn extract_callback_trait_types(
         }
       };
 
-      Ok((args, ret))
+      Ok((args, raw_return_type, ret))
     }
   }
 }
@@ -477,19 +481,41 @@ fn napi_fn_from_decl(
 
   let mut fn_self = None;
   let callback_traits = extract_fn_closure_generics(&generics)?;
-
+  let mut pure_fn = true;
   let args = inputs
     .into_iter()
     .filter_map(|arg| match arg {
       syn::FnArg::Typed(mut p) => {
-        let ty_str = p.ty.to_token_stream().to_string();
+        let mut ty_str = p.ty.to_token_stream().to_string();
+        if let Type::Path(TypePath {
+          path: Path { segments, .. },
+          ..
+        }) = p.ty.as_ref()
+        {
+          if let Some(PathSegment {
+            ident,
+            arguments:
+              syn::PathArguments::AngleBracketed(AngleBracketedGenericArguments { args, .. }),
+          }) = segments.first()
+          {
+            if ident == "Function" {
+              pure_fn = false;
+              ty_str = args.to_token_stream().to_string();
+            }
+          }
+        }
         if let Some(path_arguments) = callback_traits.get(&ty_str) {
           match extract_callback_trait_types(path_arguments) {
-            Ok((fn_args, fn_ret)) => Some(NapiFnArgKind::Callback(Box::new(CallbackArg {
-              pat: p.pat,
-              args: fn_args,
-              ret: fn_ret,
-            }))),
+            Ok((fn_args, raw_return_type, fn_ret)) => {
+              Some(NapiFnArgKind::Callback(Box::new(CallbackArg {
+                pat: p.pat,
+                args: fn_args,
+                ret: fn_ret,
+                raw_ret: raw_return_type,
+                pure_fn,
+                generic_name: ty_str,
+              })))
+            }
             Err(e) => {
               errors.push(e);
               None
