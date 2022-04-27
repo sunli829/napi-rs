@@ -54,7 +54,7 @@ jobs:
 
       - name: Pass -p and --cargo-name to build
         run: |
-          node ./cli/scripts/index.js build -p napi-examples-binary --cargo-name napi-examples-binary 
+          yarn napi build -p napi-examples-binary --cargo-name napi-examples-binary 
           ./napi-examples-binary
         env:
           RUST_BACKTRACE: 1

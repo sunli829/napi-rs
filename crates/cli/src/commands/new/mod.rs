@@ -3,11 +3,11 @@ use dialoguer::{theme::ColorfulTheme, Input, MultiSelect, Select};
 use minijinja::{context, Environment};
 use std::{fs, io, path::PathBuf};
 
-use crate::util::*;
+use crate::utils::*;
 
 /// Create a new project with pre-configured boilerplate
 #[derive(Args, Debug)]
-pub struct NewCommand {
+pub struct NewCommandArgs {
   /// The path where the napi-rs project will be created
   #[clap(parse(from_os_str))]
   path: PathBuf,
@@ -49,16 +49,32 @@ pub struct NewCommand {
   yes: bool,
 }
 
+impl TryFrom<NewCommandArgs> for NewCommand {
+  type Error = ();
+
+  fn try_from(args: NewCommandArgs) -> Result<Self, Self::Error> {
+    Ok(Self { args })
+  }
+}
+
+pub struct NewCommand {
+  args: NewCommandArgs,
+}
+
 impl Executable for NewCommand {
   fn execute(&mut self) -> CommandResult {
-    if let Err(e) = fs::create_dir_all(&self.path) {
+    if let Err(e) = fs::create_dir_all(&self.args.path) {
       eprintln!("{}", e);
-      eprintln!("Failed to create directory {:?}", self.path.as_os_str());
+      eprintln!(
+        "Failed to create directory {:?}",
+        self.args.path.as_os_str()
+      );
 
       return Err(());
     }
 
     let default_name = self
+      .args
       .path
       .iter()
       .last()
@@ -66,11 +82,11 @@ impl Executable for NewCommand {
       .to_string_lossy()
       .to_string();
 
-    if self.yes {
-      self.name = Some(default_name);
+    if self.args.yes {
+      self.args.name = Some(default_name);
       self.use_targets(DEFAULT_TARGETS);
-      self.enable_type_def = true;
-      self.enable_github_actions = true;
+      self.args.enable_type_def = true;
+      self.args.enable_github_actions = true;
     } else {
       self.fetch_name(default_name);
       self.fetch_license();
@@ -90,7 +106,7 @@ impl Executable for NewCommand {
 
 impl NewCommand {
   fn fetch_name(&mut self, default: String) {
-    self.name.get_or_insert_with(|| {
+    self.args.name.get_or_insert_with(|| {
       Input::with_theme(&ColorfulTheme::default())
         .with_prompt("Package name (The name filed in your package.json)")
         .default(default.to_owned())
@@ -100,7 +116,7 @@ impl NewCommand {
   }
 
   fn fetch_license(&mut self) {
-    self.license = Input::with_theme(&ColorfulTheme::default())
+    self.args.license = Input::with_theme(&ColorfulTheme::default())
       .with_prompt("License")
       .default("MIT".to_owned())
       .interact_text()
@@ -112,7 +128,7 @@ impl NewCommand {
       .map(|v| format!("napi{} ({})", v, napi_engine_requirement(v)))
       .collect::<Vec<_>>();
 
-    self.min_node_api = Select::with_theme(&ColorfulTheme::default())
+    self.args.min_node_api = Select::with_theme(&ColorfulTheme::default())
       .with_prompt("Minimum node-api version (with node version requirement)")
       .items(&versions)
       .default(3)
@@ -122,13 +138,13 @@ impl NewCommand {
   }
 
   fn use_targets(&mut self, targets: &[&str]) {
-    self.targets = Some(targets.iter().map(|t| t.to_string()).collect::<Vec<_>>());
+    self.args.targets = Some(targets.iter().map(|t| t.to_string()).collect::<Vec<_>>());
   }
 
   fn fetch_targets(&mut self) {
-    if self.enable_default_targets {
+    if self.args.enable_default_targets {
       self.use_targets(DEFAULT_TARGETS);
-    } else if self.enable_all_targets {
+    } else if self.args.enable_all_targets {
       self.use_targets(AVAILABLE_TARGETS);
     } else {
       let mut targets: Vec<String> = Vec::new();
@@ -156,12 +172,12 @@ impl NewCommand {
           break;
         }
       }
-      self.targets = Some(targets);
+      self.args.targets = Some(targets);
     }
   }
 
   fn fetch_type_def(&mut self) {
-    self.enable_type_def = self.enable_type_def || {
+    self.args.enable_type_def = self.args.enable_type_def || {
       let items = vec!["Yes", "No"];
       let selected_index = Select::with_theme(&ColorfulTheme::default())
         .with_prompt("Enable type-def feature (typescript definitions auto-generation)")
@@ -175,7 +191,7 @@ impl NewCommand {
   }
 
   fn fetch_gh_actions(&mut self) {
-    self.enable_github_actions = self.enable_github_actions || {
+    self.args.enable_github_actions = self.args.enable_github_actions || {
       let items = vec!["Yes", "No"];
       let selected_index = Select::with_theme(&ColorfulTheme::default())
         .with_prompt("Enable github actions")
@@ -189,8 +205,8 @@ impl NewCommand {
   }
 
   fn write_files(&self) -> io::Result<()> {
-    let name = self.name.as_ref().unwrap();
-    let targets = self.targets.as_ref().unwrap();
+    let name = self.args.name.as_ref().unwrap();
+    let targets = self.args.targets.as_ref().unwrap();
     let mut env = Environment::new();
 
     self.write_cargo_toml(&mut env, name)?;
@@ -204,18 +220,18 @@ impl NewCommand {
   fn write_cargo_toml(&self, env: &mut Environment, name: &str) -> io::Result<()> {
     let file_name = "Cargo.toml";
     env
-      .add_template(file_name, include_str!("new/templates/cargo_toml.tpl"))
+      .add_template(file_name, include_str!("templates/cargo_toml.tpl"))
       .unwrap();
     let template = env.get_template(file_name).unwrap();
-    let features = vec![format!("napi{}", self.min_node_api)];
+    let features = vec![format!("napi{}", self.args.min_node_api)];
     let mut derive_features: Vec<&str> = vec![];
-    if self.enable_type_def {
+    if self.args.enable_type_def {
       derive_features.push("type-def");
     }
     let cargo_toml = template
       .render(context!(
         name => package_name_to_crate_name(name),
-        license => self.license,
+        license => self.args.license,
         napi_version => 2,
         napi_derive_version => 2,
         napi_build_version => 1,
@@ -224,18 +240,18 @@ impl NewCommand {
       ))
       .unwrap();
 
-    write_file(&self.path.join(file_name), &cargo_toml)
+    write_file(&self.args.path.join(file_name), &cargo_toml)
   }
 
   fn write_lib_files(&self, _env: &mut Environment) -> io::Result<()> {
     write_file(
-      &self.path.join("/src/lib.rs"),
-      include_str!("new/templates/lib_rs.tpl"),
+      &self.args.path.join("/src/lib.rs"),
+      include_str!("templates/lib_rs.tpl"),
     )?;
 
     write_file(
-      &self.path.join("build.rs"),
-      include_str!("new/templates/build_rs.tpl"),
+      &self.args.path.join("build.rs"),
+      include_str!("templates/build_rs.tpl"),
     )?;
 
     Ok(())
@@ -249,7 +265,7 @@ impl NewCommand {
   ) -> io::Result<()> {
     let file_name = "package.json";
     env
-      .add_template(file_name, include_str!("new/templates/package_json.tpl"))
+      .add_template(file_name, include_str!("templates/package_json.tpl"))
       .unwrap();
 
     let template = env.get_template(file_name).unwrap();
@@ -258,12 +274,12 @@ impl NewCommand {
         name => name,
         binary_name => package_name_to_binary_name(name),
         targets => targets,
-        license => self.license,
-        node_version_requirement => napi_engine_requirement(self.min_node_api),
+        license => self.args.license,
+        node_version_requirement => napi_engine_requirement(self.args.min_node_api),
       ))
       .unwrap();
 
-    write_file(&self.path.join(file_name), &package_json)
+    write_file(&self.args.path.join(file_name), &package_json)
   }
 
   fn write_github_workflow(
@@ -272,16 +288,13 @@ impl NewCommand {
     name: &str,
     targets: &[String],
   ) -> io::Result<()> {
-    if !self.enable_github_actions {
+    if !self.args.enable_github_actions {
       return Ok(());
     }
 
     let file_name = "CI.yml";
     env
-      .add_template(
-        file_name,
-        include_str!("new/templates/github_workflow_yml.tpl"),
-      )
+      .add_template(file_name, include_str!("templates/github_workflow_yml.tpl"))
       .unwrap();
 
     let template = env.get_template(file_name).unwrap();
@@ -293,7 +306,7 @@ impl NewCommand {
       .unwrap();
 
     write_file(
-      &self.path.join(".github/workflows").join(file_name),
+      &self.args.path.join(".github/workflows").join(file_name),
       &github_workflow,
     )
   }

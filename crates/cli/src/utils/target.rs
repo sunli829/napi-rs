@@ -1,3 +1,5 @@
+use std::process::Command;
+
 use phf::phf_map;
 use serde::{ser::SerializeMap, Serialize, Serializer};
 
@@ -24,7 +26,7 @@ pub const DEFAULT_TARGETS: &[&str] = &[
 ];
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeArch {
   x32,
   x64,
@@ -96,7 +98,6 @@ impl Serialize for NodeArch {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Clone)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodePlatform {
   Darwin,
@@ -127,7 +128,7 @@ impl std::fmt::Display for NodePlatform {
     match self {
       NodePlatform::Darwin => write!(f, "darwin"),
       NodePlatform::Freebsd => write!(f, "freebsd"),
-      NodePlatform::Windows => write!(f, "windows"),
+      NodePlatform::Windows => write!(f, "win32"),
       NodePlatform::Linux => write!(f, "linux"),
       NodePlatform::Android => write!(f, "android"),
       NodePlatform::Fuchsia => write!(f, "fuchsia"),
@@ -145,39 +146,6 @@ impl Serialize for NodePlatform {
   }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct TargetDetail {
-  pub platform_abi: String,
-  pub arch: NodeArch,
-  pub platform: NodePlatform,
-  pub abi: Option<String>,
-}
-
-impl From<&str> for TargetDetail {
-  fn from(triple: &str) -> TargetDetail {
-    let parts = triple.split('-').collect::<Vec<_>>();
-    let (cpu, sys, abi) = if parts.len() == 2 {
-      (parts[0], parts[2], None)
-    } else {
-      (parts[0], parts[2], parts.get(3))
-    };
-
-    let platform = NodePlatform::from_str(sys);
-    let arch = NodeArch::from_str(cpu).unwrap_or_else(|| panic!("unsupported cpu arch {}", cpu));
-    TargetDetail {
-      platform_abi: if abi.is_some() {
-        format!("{}-{}-{}", platform, arch, abi.unwrap())
-      } else {
-        format!("{}-{}", platform, arch)
-      },
-      arch,
-      platform,
-      abi: abi.map(|s| s.to_string()),
-    }
-  }
-}
-
-#[derive(Clone, Debug, Default)]
 pub fn get_system_default_target() -> String {
   let output = Command::new("rustup")
     .args(&["show", "active-toolchain"])
@@ -208,6 +176,16 @@ pub struct GithubWorkflowConfig {
   pub host: &'static str,
   pub docker_image: Option<&'static str>,
   pub setup: Option<&'static str>,
+}
+
+impl Default for GithubWorkflowConfig {
+  fn default() -> Self {
+    Self {
+      host: "ubuntu-latest",
+      docker_image: None,
+      setup: None,
+    }
+  }
 }
 
 impl Serialize for GithubWorkflowConfig {
@@ -312,8 +290,6 @@ pub struct Target {
 
 impl Target {
   pub fn new(triple: &str) -> Self {
-    let detail = TargetDetail::from(triple);
-    let config = TARGET_CONFIG_MAP.get(triple).unwrap().clone();
     let mut triple = triple.to_string();
     // armv7-linux-androideabi => armv7-linux-android-eabi
     if triple.ends_with("androideabi") {
@@ -367,6 +343,7 @@ where
 
 #[cfg(test)]
 mod tests {
+
   use super::*;
 
   #[test]
@@ -380,6 +357,21 @@ mod tests {
       assert_eq!(target.platform, NodePlatform::Darwin);
     } else if cfg!(target_os = "linux") {
       assert_eq!(target.platform, NodePlatform::Linux);
+    }
+  }
+
+  #[test]
+  fn test_target_from_str() {
+    // crate will be built both for lib and binary
+    // only need snapshot test once.
+    if option_env!("CARGO_BIN_NAME").is_some() {
+      use insta::assert_debug_snapshot;
+      let targets = AVAILABLE_TARGETS
+        .iter()
+        .map(Target::from)
+        .collect::<Vec<_>>();
+
+      assert_debug_snapshot!(&targets);
     }
   }
 }

@@ -1010,8 +1010,6 @@ __metadata:
     toml: ^3.0.0
     tslib: ^2.4.0
     typanion: ^3.8.0
-  bin:
-    napi: ./scripts/index.js
   languageName: unknown
   linkType: soft
 
@@ -6731,6 +6729,22 @@ __metadata:
   languageName: node
   linkType: hard
 
+"napi-cli@portal:./crates/cli::locator=napi-rs%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "napi-cli@portal:./crates/cli::locator=napi-rs%40workspace%3A."
+  bin:
+    napi: ./index.js
+  languageName: node
+  linkType: soft
+
+"napi-cli@workspace:crates/cli":
+  version: 0.0.0-use.local
+  resolution: "napi-cli@workspace:crates/cli"
+  bin:
+    napi: ./index.js
+  languageName: unknown
+  linkType: soft
+
 "napi-rs@workspace:.":
   version: 0.0.0-use.local
   resolution: "napi-rs@workspace:."
@@ -6761,6 +6775,7 @@ __metadata:
     husky: ^8.0.1
     lerna: ^4.0.0
     lint-staged: ^12.4.1
+    napi-cli: "portal:./crates/cli"
     npm-run-all: ^4.1.5
     prettier: ^2.6.2
     rollup: ^2.73.0
