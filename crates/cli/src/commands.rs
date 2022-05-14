@@ -44,7 +44,7 @@ pub fn run(args: Vec<String>) {
 
   // eat the error of setting logger
   if log::set_boxed_logger(Box::new(SimpleLogger)).is_err() {}
-  log::set_max_level(log::LevelFilter::Info);
+  log::set_max_level(log::LevelFilter::Trace);
 
   run_command!(
     cli.command,
