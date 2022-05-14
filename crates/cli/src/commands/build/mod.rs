@@ -132,15 +132,18 @@ impl TryFrom<BuildCommandArgs> for BuildCommand {
               .target_dir
               .clone()
               .unwrap_or_else(|| metadata.target_directory.clone().into_std_path_buf()),
-            args,
-            package: pkg.clone(),
             lib_target: pkg
               .targets
               .iter()
               .find(|t| t.crate_types.iter().any(|t| t == "cdylib"))
               .cloned(),
-            default_build_target: get_system_default_target(),
+            target: args
+              .target
+              .clone()
+              .unwrap_or_else(get_system_default_target),
             intermediate_type_file: get_intermediate_type_file(),
+            args,
+            package: pkg.clone(),
           }),
           None => {
             error!("Could not find crate to build");
@@ -162,7 +165,7 @@ pub struct BuildCommand {
   target_dir: PathBuf,
   package: Package,
   lib_target: Option<LibTarget>,
-  default_build_target: String,
+  target: String,
   intermediate_type_file: PathBuf,
 }
 
@@ -248,13 +251,8 @@ impl BuildCommand {
   }
 
   fn set_target(&self, cmd: &mut Command) -> &Self {
-    let target = self
-      .args
-      .target
-      .as_ref()
-      .unwrap_or(&self.default_build_target);
-    trace!("set compiling target to {}", target);
-    cmd.arg("--target").arg(target);
+    trace!("set compiling target to {}", &self.target);
+    cmd.arg("--target").arg(&self.target);
 
     self
   }
@@ -320,13 +318,7 @@ impl BuildCommand {
       Err(_) => String::new(),
     };
 
-    let target = self
-      .args
-      .target
-      .as_ref()
-      .unwrap_or(&self.default_build_target);
-
-    if target.contains("musl") && !rust_flags.contains("target-feature=-crt-static") {
+    if self.target.contains("musl") && !rust_flags.contains("target-feature=-crt-static") {
       rust_flags.push_str(" -C target-feature=-crt-static");
     }
 
@@ -365,15 +357,12 @@ impl BuildCommand {
     let mut src = self.target_dir.clone();
     let mut dest = self.output_dir.clone();
 
+    src.push(&self.target);
     src.push(if self.args.release {
       "release"
     } else {
       "debug"
     });
-
-    if self.args.target.is_some() {
-      src.push(self.args.target.as_ref().unwrap());
-    }
 
     let (src_name, dest_name) = self.get_artifact_names();
     src.push(src_name);
@@ -386,13 +375,7 @@ impl BuildCommand {
   }
 
   fn get_artifact_names(&self) -> (/* src */ String, /* dist */ String) {
-    let target = Target::from(
-      self
-        .args
-        .target
-        .as_ref()
-        .unwrap_or(&self.default_build_target),
-    );
+    let target = Target::from(&self.target);
     let is_binary = self.args.bin;
     let name = if is_binary {
       self.package.name.clone()
