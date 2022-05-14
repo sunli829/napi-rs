@@ -1,4 +1,4 @@
-# Snapshot report for `examples/napi/__test__/values.spec.ts`
+# Snapshot report for `examples/napi/__tests__/values.spec.ts`
 
 The actual snapshot is saved in `values.spec.ts.snap`.
 

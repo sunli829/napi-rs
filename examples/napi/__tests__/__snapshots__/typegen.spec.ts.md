@@ -1,4 +1,4 @@
-# Snapshot report for `examples/napi/__test__/typegen.spec.ts`
+# Snapshot report for `examples/napi/__tests__/typegen.spec.ts`
 
 The actual snapshot is saved in `typegen.spec.ts.snap`.
 
