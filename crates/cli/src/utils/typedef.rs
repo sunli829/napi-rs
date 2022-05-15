@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::fmt::Write as _;
 use std::{cmp::Ordering, collections::HashMap, fs::File, io::Read, path::Path};
 
 pub fn correct_str_indent(src: &str, indent: usize) -> String {
@@ -95,10 +96,7 @@ impl TypeDefLine {
         match self.original_name {
           Some(original_name) if original_name != self.name => {
             s.push('\n');
-            s.push_str(&format!(
-              "export type {} = {}\n\n",
-              original_name, self.name,
-            ));
+            let _ = write!(s, "export type {} = {}\n\n", original_name, self.name);
           }
           _ => {
             s.push_str("\n\n");
@@ -239,7 +237,7 @@ impl IntermidiateTypeDefFile {
           dts.push_str(&line.into_pretty_print(0));
         }
       } else {
-        dts.push_str(&format!("export namespace {} {{\n", namespace));
+        let _ = writeln!(dts, "declare namespace {} {{", namespace);
         for line in lines {
           dts.push_str(&line.into_pretty_print(2));
         }

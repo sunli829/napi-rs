@@ -1,4 +1,5 @@
 use std::cmp::{Ordering, PartialOrd};
+use std::fmt::Write as _;
 
 use phf::{phf_map, Map};
 
@@ -43,16 +44,17 @@ impl NodeVersion {
       let mut req = String::from("");
       if i != 0 {
         let last_version = &versions[i - 1];
-        req.push_str(&format!("< {}", last_version.major + 1));
+        let _ = write!(req, "< {}", last_version.major + 1);
       }
 
-      req.push_str(&format!(
+      let _ = write!(
+        req,
         "{}>= {}.{}.{}",
         if i == 0 { "" } else { " || " },
         v.major,
         v.minor,
         v.patch
-      ));
+      );
       requirements.push(req);
     });
 
