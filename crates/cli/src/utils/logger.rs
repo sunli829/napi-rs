@@ -1,4 +1,4 @@
-use log::{max_level, Log, Metadata, Record};
+pub use log::*;
 
 pub struct SimpleLogger;
 
@@ -9,11 +9,18 @@ impl Log for SimpleLogger {
 
   fn log(&self, record: &Record) {
     if self.enabled(record.metadata()) {
-      println!("{}", record.args());
+      if record.level() > Level::Info && record.file().is_some() {
+        println!(
+          "[{}] {}: {}",
+          record.level(),
+          record.file().unwrap(),
+          record.args()
+        );
+      } else {
+        println!("[{}]: {}", record.level(), record.args());
+      }
     }
   }
 
   fn flush(&self) {}
 }
-
-pub use log::*;

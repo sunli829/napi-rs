@@ -17,8 +17,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum SubCommand {
-  New(NewCommandArgs),
-  Build(BuildCommandArgs),
+  New(Box<NewCommandArgs>),
+  Build(Box<BuildCommandArgs>),
 }
 
 macro_rules! run_command {
@@ -26,7 +26,7 @@ macro_rules! run_command {
     match $src {
       $(
         SubCommand::$branch(args) => {
-          <$cmd>::try_from(args)
+          <$cmd>::try_from(*args)
             .and_then(|mut cmd| cmd.execute())
             .unwrap_or_else(|_| {
               std::process::exit(1);

@@ -1,5 +1,5 @@
 use crate::utils::*;
-use cargo_metadata::{MetadataCommand, Package, Target as LibTarget};
+use cargo_metadata::{MetadataCommand, Package};
 use clap::Args;
 use clap_cargo::Features;
 use log::{error, trace};
@@ -66,9 +66,9 @@ pub struct BuildCommandArgs {
   #[clap(short, long)]
   verbose: bool,
 
-  /// Build the target as binary
+  /// Build only the specified binary
   #[clap(long)]
-  bin: bool,
+  bin: Option<String>,
 
   /// Build the specified library or the one at cwd
   #[clap(short, long)]
@@ -132,11 +132,20 @@ impl TryFrom<BuildCommandArgs> for BuildCommand {
               .target_dir
               .clone()
               .unwrap_or_else(|| metadata.target_directory.clone().into_std_path_buf()),
-            lib_target: pkg
+            cdylib_target: pkg
               .targets
               .iter()
               .find(|t| t.crate_types.iter().any(|t| t == "cdylib"))
+              .map(|t| &t.name)
               .cloned(),
+            bin_target: args.bin.clone().or_else(|| {
+              pkg
+                .targets
+                .iter()
+                .find(|t| t.kind.iter().any(|t| t == "bin"))
+                .map(|t| &t.name)
+                .cloned()
+            }),
             target: args
               .target
               .clone()
@@ -164,7 +173,8 @@ pub struct BuildCommand {
   output_dir: PathBuf,
   target_dir: PathBuf,
   package: Package,
-  lib_target: Option<LibTarget>,
+  cdylib_target: Option<String>,
+  bin_target: Option<String>,
   target: String,
   intermediate_type_file: PathBuf,
 }
@@ -183,7 +193,11 @@ impl Executable for BuildCommand {
 
 impl BuildCommand {
   fn run(&self) -> CommandResult {
-    self.check_package()?;
+    if self.cdylib_target.is_none() {
+      warn!(
+        r#"Missing `crate-type = ["cdylib"]` in [lib] config, not gonna generate node binding"#
+      );
+    }
 
     let mut cmd = self.create_command();
     trace!(
@@ -194,6 +208,7 @@ impl BuildCommand {
         .collect::<Vec<_>>()
         .join(" ")
     );
+
     let exit_status = cmd
       .spawn()
       .expect("failed to execute `cargo build`")
@@ -300,8 +315,9 @@ impl BuildCommand {
       args.push(package.as_ref());
     }
 
-    if self.args.bin {
+    if let Some(bin) = &self.args.bin {
       args.push("--bin");
+      args.push(bin);
     }
 
     if !args.is_empty() {
@@ -334,85 +350,58 @@ impl BuildCommand {
     self
   }
 
-  fn check_package(&self) -> CommandResult {
-    if self.args.bin {
-      return Ok(());
-    }
-
-    if self.lib_target.is_none() {
-      error!("crate is not a cdylib");
-      return Err(());
-    }
-
-    Ok(())
-  }
-
   fn post_build(&self) {
     self.copy_output();
-    self.process_type_def();
-    self.write_js_binding();
+
+    // only for cdylib
+    if self.cdylib_target.is_some() {
+      self.process_type_def();
+      self.write_js_binding();
+    }
   }
 
   fn copy_output(&self) {
-    let mut src = self.target_dir.clone();
-    let mut dest = self.output_dir.clone();
+    if let Some((src_name, dest_name)) = self.get_artifact_names() {
+      let mut src = self.target_dir.clone();
+      let mut dest = self.output_dir.clone();
 
-    src.push(&self.target);
-    src.push(if self.args.release {
-      "release"
-    } else {
-      "debug"
-    });
+      src.push(&self.target);
+      src.push(if self.args.release {
+        "release"
+      } else {
+        "debug"
+      });
 
-    let (src_name, dest_name) = self.get_artifact_names();
-    src.push(src_name);
-    dest.push(dest_name);
+      src.push(src_name);
+      dest.push(dest_name);
 
-    if let Ok(()) = fs::remove_file(&dest) {};
-    if let Err(e) = fs::copy(&src, &dest) {
-      error!("Failed to move artifact to dest path. {}", e);
-    };
+      info!("copy artifact from {} to {}", src.display(), dest.display());
+
+      if let Ok(()) = fs::remove_file(&dest) {};
+      if let Err(e) = fs::copy(&src, &dest) {
+        error!("Failed to move artifact to dest path. {}", e);
+      };
+    }
   }
 
-  fn get_artifact_names(&self) -> (/* src */ String, /* dist */ String) {
+  fn get_artifact_names(&self) -> Option<(/* src */ String, /* dist */ String)> {
     let target = Target::from(&self.target);
-    let is_binary = self.args.bin;
-    let name = if is_binary {
-      self.package.name.clone()
-    } else {
-      self
-        .lib_target
-        .as_ref()
-        .unwrap()
-        .name
-        .clone()
-        .replace('-', "_")
-    };
 
-    let src_name = if is_binary {
-      if target.platform == NodePlatform::Windows {
-        format!("{}.exe", name)
-      } else {
-        name
-      }
-    } else {
-      match target.platform {
+    if let Some(cdylib) = &self.cdylib_target {
+      let cdylib = cdylib.clone().replace('-', "_");
+      let src_name = match target.platform {
         NodePlatform::Darwin => {
-          format!("lib{}.dylib", name)
+          format!("lib{}.dylib", cdylib)
         }
         NodePlatform::Windows => {
-          format!("{}.dll", name)
+          format!("{}.dll", cdylib)
         }
         _ => {
-          format!("lib{}.so", name)
+          format!("lib{}.so", cdylib)
         }
-      }
-    };
+      };
 
-    let dest_name = if is_binary {
-      src_name.clone()
-    } else {
-      format!(
+      let dest_name = format!(
         "{}{}.node",
         "index",
         if self.args.platform {
@@ -420,10 +409,22 @@ impl BuildCommand {
         } else {
           "".to_owned()
         }
-      )
-    };
+      );
 
-    (src_name, dest_name)
+      Some((src_name, dest_name))
+    } else if let Some(bin) = &self.bin_target {
+      let src_name = if target.platform == NodePlatform::Windows {
+        format!("{}.exe", bin)
+      } else {
+        bin.clone()
+      };
+
+      let dest_name = src_name.clone();
+
+      Some((src_name, dest_name))
+    } else {
+      None
+    }
   }
 
   fn process_type_def(&self) {
@@ -489,5 +490,5 @@ fn get_intermediate_type_file() -> PathBuf {
     write!(hex_string, "{:02X}", byte).unwrap();
   }
 
-  temp_dir().join(format!("type_def.{hex_string}.tmp"))
+  temp_dir().join(format!("type_def.{}.tmp", hex_string))
 }

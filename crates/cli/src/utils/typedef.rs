@@ -95,7 +95,10 @@ impl TypeDefLine {
         match self.original_name {
           Some(original_name) if original_name != self.name => {
             s.push('\n');
-            s.push_str(&format!("export type {original_name} = {}\n\n", self.name,));
+            s.push_str(&format!(
+              "export type {} = {}\n\n",
+              original_name, self.name,
+            ));
           }
           _ => {
             s.push_str("\n\n");

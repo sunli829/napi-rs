@@ -11,5 +11,8 @@
     "build-i686-release": "napi build --no-js --release --features \"latest\" --target i686-pc-windows-msvc",
     "build-release": "napi build --no-js --features \"latest\" --release",
     "test": "node ./index.js"
+  },
+  "devDependencies": {
+    "napi-cli": "workspace:*"
   }
 }

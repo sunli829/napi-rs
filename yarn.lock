@@ -2276,6 +2276,8 @@ __metadata:
 "bench@workspace:bench":
   version: 0.0.0-use.local
   resolution: "bench@workspace:bench"
+  dependencies:
+    napi-cli: "workspace:*"
   languageName: unknown
   linkType: soft
 
@@ -2316,6 +2318,8 @@ __metadata:
 "binary@workspace:examples/binary":
   version: 0.0.0-use.local
   resolution: "binary@workspace:examples/binary"
+  dependencies:
+    napi-cli: "workspace:*"
   bin:
     binary: napi-examples-binary
   languageName: unknown
@@ -2931,6 +2935,8 @@ __metadata:
 "compat-mode-examples@workspace:examples/napi-compat-mode":
   version: 0.0.0-use.local
   resolution: "compat-mode-examples@workspace:examples/napi-compat-mode"
+  dependencies:
+    napi-cli: "workspace:*"
   languageName: unknown
   linkType: soft
 
@@ -4197,6 +4203,7 @@ __metadata:
   dependencies:
     "@types/lodash": ^4.14.182
     lodash: ^4.17.21
+    napi-cli: "workspace:*"
   languageName: unknown
   linkType: soft
 
@@ -6385,6 +6392,7 @@ __metadata:
     "@types/dockerode": ^3.3.9
     colorette: ^2.0.16
     dockerode: ^3.3.1
+    napi-cli: "workspace:*"
     pretty-bytes: ^6.0.0
     table: ^6.8.0
   languageName: unknown
@@ -6729,15 +6737,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"napi-cli@portal:./crates/cli::locator=napi-rs%40workspace%3A.":
-  version: 0.0.0-use.local
-  resolution: "napi-cli@portal:./crates/cli::locator=napi-rs%40workspace%3A."
-  bin:
-    napi: ./index.js
-  languageName: node
-  linkType: soft
-
-"napi-cli@workspace:crates/cli":
+"napi-cli@workspace:*, napi-cli@workspace:crates/cli":
   version: 0.0.0-use.local
   resolution: "napi-cli@workspace:crates/cli"
   bin:
@@ -6775,7 +6775,7 @@ __metadata:
     husky: ^8.0.1
     lerna: ^4.0.0
     lint-staged: ^12.4.1
-    napi-cli: "portal:./crates/cli"
+    napi-cli: "workspace:*"
     npm-run-all: ^4.1.5
     prettier: ^2.6.2
     rollup: ^2.73.0
