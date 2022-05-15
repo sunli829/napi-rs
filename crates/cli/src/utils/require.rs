@@ -25,11 +25,11 @@ pub struct NodeVersion {
 impl PartialOrd for NodeVersion {
   fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
     match self.major.partial_cmp(&other.major) {
-      Some(core::cmp::Ordering::Equal) => {}
+      Some(Ordering::Equal) => {}
       ord => return ord,
     }
     match self.minor.partial_cmp(&other.minor) {
-      Some(core::cmp::Ordering::Equal) => {}
+      Some(Ordering::Equal) => {}
       ord => return ord,
     }
     self.patch.partial_cmp(&other.patch)

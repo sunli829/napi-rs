@@ -94,6 +94,7 @@ impl TryFrom<BuildCommandArgs> for BuildCommand {
   type Error = ();
 
   fn try_from(args: BuildCommandArgs) -> Result<Self, Self::Error> {
+    trace!("napi build command receive args: {:?}", args);
     let mut path = args.cwd.clone().unwrap_or_else(|| current_dir().unwrap());
     path.push("Cargo.toml");
 
@@ -234,7 +235,6 @@ impl BuildCommand {
       .set_features(&mut cmd)
       .set_target(&mut cmd)
       .set_envs(&mut cmd)
-      .set_rust_flags(&mut cmd)
       .set_bypass_args(&mut cmd)
       .set_package(&mut cmd);
 
@@ -251,14 +251,31 @@ impl BuildCommand {
   }
 
   fn set_envs(&self, cmd: &mut Command) -> &Self {
-    let envs = vec![(
+    let mut envs = vec![(
       "TYPE_DEF_TMP_PATH",
       self.intermediate_type_file.to_str().unwrap(),
     )];
 
+    let mut rust_flags = match var("RUSTFLAGS") {
+      Ok(s) => s,
+      Err(_) => String::new(),
+    };
+
+    if self.target.contains("musl") && !rust_flags.contains("target-feature=-crt-static") {
+      rust_flags.push_str(" -C target-feature=-crt-static");
+    }
+
+    if self.args.strip && !rust_flags.contains("link-arg=-s") {
+      rust_flags.push_str(" -C link-arg=-s");
+    }
+
+    if !rust_flags.is_empty() {
+      envs.push(("RUSTFLAGS", &rust_flags));
+    }
+
     trace!("set environment variables: ");
     envs.iter().for_each(|(k, v)| {
-      trace!("{}={}", k, v);
+      trace!("  {}={}", k, v);
       cmd.env(k, v);
     });
 
@@ -323,28 +340,6 @@ impl BuildCommand {
     if !args.is_empty() {
       trace!("set package flags: {:?}", args);
       cmd.args(args);
-    }
-
-    self
-  }
-
-  fn set_rust_flags(&self, cmd: &mut Command) -> &Self {
-    let mut rust_flags = match var("RUSTFLAGS") {
-      Ok(s) => s,
-      Err(_) => String::new(),
-    };
-
-    if self.target.contains("musl") && !rust_flags.contains("target-feature=-crt-static") {
-      rust_flags.push_str(" -C target-feature=-crt-static");
-    }
-
-    if self.args.strip && !rust_flags.contains("link-arg=-s") {
-      rust_flags.push_str(" -C link-arg=-s");
-    }
-
-    if !rust_flags.is_empty() {
-      trace!("set RUSTFLAGS: {}", rust_flags);
-      cmd.env("RUSTFLAGS", rust_flags);
     }
 
     self

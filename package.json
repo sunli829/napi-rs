@@ -19,7 +19,7 @@
   "license": "MIT",
   "scripts": {
     "bench": "cross-env TS_NODE_PROJECT='./bench/tsconfig.json' node -r ts-node/register/transpile-only bench/bench.ts",
-    "build": "yarn workspace napi-cli build && node -r ts-node/register/transpile-only ./generate-triple-list.ts",
+    "build": "node -r ts-node/register/transpile-only ./generate-triple-list.ts && yarn workspace napi-cli build",
     "build:bench": "yarn workspace bench build",
     "build:memory": "yarn workspace memory-testing build",
     "build:test": "yarn workspace compat-mode-examples build && yarn workspace examples build",
