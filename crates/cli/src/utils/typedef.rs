@@ -237,7 +237,7 @@ impl IntermidiateTypeDefFile {
           dts.push_str(&line.into_pretty_print(0));
         }
       } else {
-        let _ = writeln!(dts, "declare namespace {} {{", namespace);
+        let _ = writeln!(dts, "export namespace {} {{", namespace);
         for line in lines {
           dts.push_str(&line.into_pretty_print(2));
         }

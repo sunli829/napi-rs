@@ -147,26 +147,20 @@ impl Serialize for NodePlatform {
 }
 
 pub fn get_system_default_target() -> String {
-  let output = Command::new("rustup")
-    .args(&["show", "active-toolchain"])
+  let output = Command::new("rustc")
+    .arg("-vV")
     .output()
-    .expect("Failed to get rustup default toolchain");
-
-  let active_toolchain = unsafe { String::from_utf8_unchecked(output.stdout) };
-
-  let output = Command::new("rustup")
-    .args(&["target", "list"])
-    .output()
-    .expect("Failed to get rustup toolchain list");
+    .expect("Failed to get rustc version information");
 
   unsafe {
     let output = String::from_utf8_unchecked(output.stdout);
 
     output
       .lines()
-      .map(|line| line.trim().trim_end_matches("(installed)").trim())
-      .find(|target| active_toolchain.contains(target))
-      .expect("Failed to get rustup default target")
+      .find(|line| line.starts_with("host:"))
+      .map(|line| line.split(' ').nth(1))
+      .expect("Failed to get rustc version information")
+      .unwrap()
       .to_owned()
   }
 }

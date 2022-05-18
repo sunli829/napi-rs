@@ -8,17 +8,8 @@ impl Log for SimpleLogger {
   }
 
   fn log(&self, record: &Record) {
-    if self.enabled(record.metadata()) {
-      if record.level() > Level::Info && record.file().is_some() {
-        println!(
-          "[{}] {}: {}",
-          record.level(),
-          record.file().unwrap(),
-          record.args()
-        );
-      } else {
-        println!("[{}]: {}", record.level(), record.args());
-      }
+    if self.enabled(record.metadata()) && record.level() > Level::Info {
+      println!("[{}] {}", record.level(), record.args());
     }
   }
 
