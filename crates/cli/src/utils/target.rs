@@ -284,13 +284,13 @@ pub struct Target {
 
 impl Target {
   pub fn new(triple: &str) -> Self {
-    let mut triple = triple.to_string();
+    let mut target = triple.to_string();
     // armv7-linux-androideabi => armv7-linux-android-eabi
-    if triple.ends_with("androideabi") {
-      triple.insert(triple.len() - 4, '-');
+    if target.ends_with("androideabi") {
+      target.insert(target.len() - 4, '-');
     }
 
-    let parts = triple.split('-').collect::<Vec<_>>();
+    let parts = target.split('-').collect::<Vec<_>>();
     let (cpu, sys, abi) = if parts.len() == 2 {
       // aarch64-fuchsia
       // ^ cpu   ^ sys

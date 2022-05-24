@@ -104,7 +104,7 @@ expression: "&targets"
         ),
     },
     Target {
-        triple: "armv7-linux-android-eabi",
+        triple: "armv7-linux-androideabi",
         platform_arch_abi: "android-arm-eabi",
         platform: Android,
         arch: arm,

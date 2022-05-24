@@ -9,7 +9,7 @@ description = "A command line interface for Node API Rust bindings"
 crate-type = ["cdylib"]
 
 [[bin]]
-name = "napi-cli-bin"
+name = "napi"
 path = "src/main.rs"
 
 [dependencies]
