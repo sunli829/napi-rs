@@ -5,7 +5,7 @@ use clap_cargo::Features;
 use log::{error, trace};
 use minijinja::{context, Environment};
 use rand::{thread_rng, RngCore};
-use std::env::{current_dir, temp_dir, var};
+use std::env::{current_dir, current_exe, temp_dir, var};
 use std::fmt::Write;
 use std::fs;
 use std::path::PathBuf;
@@ -81,15 +81,19 @@ pub struct BuildCommandArgs {
   #[clap(short, long)]
   cross_compile: bool,
 
+  /// watch the crate changes and build continiously
+  #[clap(short, long)]
+  watch: bool,
+
   /// All other flags bypassed to `cargo build` command. Usage: `napi build -- -p sub-crate`
   #[clap(last = true)]
   bypass_flags: Vec<String>,
 }
 
-impl TryFrom<BuildCommandArgs> for BuildCommand {
+impl TryFrom<(BuildCommandArgs, Vec<String>)> for BuildCommand {
   type Error = ();
 
-  fn try_from(args: BuildCommandArgs) -> Result<Self, Self::Error> {
+  fn try_from((args, raw_args): (BuildCommandArgs, Vec<String>)) -> Result<Self, Self::Error> {
     trace!("napi build command receive args: {:?}", args);
     let mut path = args.cwd.clone().unwrap_or_else(|| current_dir().unwrap());
     path.push("Cargo.toml");
@@ -150,8 +154,9 @@ impl TryFrom<BuildCommandArgs> for BuildCommand {
                 .unwrap_or_else(get_system_default_target),
             ),
             intermediate_type_file: get_intermediate_type_file(),
-            args,
             package: pkg.clone(),
+            args,
+            raw_args,
           }),
           None => {
             error!("Could not find crate to build");
@@ -169,6 +174,7 @@ impl TryFrom<BuildCommandArgs> for BuildCommand {
 
 pub struct BuildCommand {
   args: BuildCommandArgs,
+  raw_args: Vec<String>,
   output_dir: PathBuf,
   target_dir: PathBuf,
   package: Package,
@@ -199,14 +205,16 @@ impl BuildCommand {
     }
 
     let mut cmd = self.create_command();
-    trace!(
-      "Running cargo build with args: {:?}",
-      cmd
-        .get_args()
-        .map(|arg| arg.to_string_lossy())
-        .collect::<Vec<_>>()
-        .join(" ")
-    );
+    if !self.args.watch {
+      trace!(
+        "Running cargo build with args: {:?}",
+        cmd
+          .get_args()
+          .map(|arg| arg.to_string_lossy())
+          .collect::<Vec<_>>()
+          .join(" ")
+      );
+    }
 
     let exit_status = cmd
       .spawn()
@@ -225,34 +233,43 @@ impl BuildCommand {
   }
 
   fn create_command(&self) -> Command {
-    let mut cmd = if !self.args.cross_compile {
+    let mut cmd = if self.args.watch {
+      try_install_cargo_binary("cargo-watch", "watch");
+      let mut watch = Command::new("cargo");
+      watch.args(["watch", "--why", "-i", "*.{js,ts,node}"]);
+      if let Some(watch_path) = self.package.manifest_path.as_std_path().parent() {
+        watch.arg("-w").arg(watch_path.as_os_str());
+      }
+
+      let exe = current_exe().expect("Failed to get current executable");
+      watch.arg("--").arg(&exe);
+      // started with js binary by `yarn napi ...`
+      // or started with cargo binary by `cargo napi`
+      // the `current_exe()` would be `node/cargo` and the first element of raw_args would be `path/to/napi`
+      match &exe.file_stem().and_then(|n| n.to_str()) {
+        Some(exe_name) => match *exe_name {
+          "node" | "cargo" => {
+            watch.arg(self.raw_args.first().unwrap());
+          }
+          _ => {}
+        },
+        None => {}
+      }
+
+      watch.arg("build");
+      watch
+    } else if !self.args.cross_compile {
       let mut build = Command::new("cargo");
       build.arg("build");
       build
     } else if self.target.platform == NodePlatform::Windows {
       // lazy install to reduce the size of non-cross-compiling senerios.
-      trace!("Downloading cargo-xwin");
-      let mut install_xwin_cmd = Command::new("cargo");
-      install_xwin_cmd.args(&["install", "cargo-xwin"]);
-      install_xwin_cmd
-        .spawn()
-        .expect("Failed to install cargo-xwin for cross compiling")
-        .wait()
-        .expect("Failed to install cargo-xwin for cross compiling");
-
+      try_install_cargo_binary("cargo-xwin", "xwin");
       let mut build = Command::new("cargo");
-      build.args(&["xwin", "build"]);
+      build.args(["xwin", "build"]);
       build
     } else {
-      trace!("Downloading cargo-zigbuild");
-      let mut install_zigbuild_cmd = Command::new("cargo");
-      install_zigbuild_cmd.args(&["install", "cargo-zigbuild"]);
-      install_zigbuild_cmd
-        .spawn()
-        .expect("Failed to install cargo-zigbuild for cross compiling")
-        .wait()
-        .expect("Failed to install cargo-zigbuild for cross compiling");
-
+      try_install_cargo_binary("cargo-zigbuild", "zigbuild");
       let mut build = Command::new("cargo");
       build.arg("zigbuild");
       build

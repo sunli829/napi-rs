@@ -16,11 +16,11 @@ enum Cli {
 }
 
 macro_rules! run_command {
-  ( $src:expr, $( ($branch:ident, $cmd:ty) ),* ) => {
+  ( $src:ident, $raw_args:ident, $( ($branch:ident, $cmd:ty) ),* ) => {
     match $src {
       $(
-        Cli::$branch(args) => {
-          <$cmd>::try_from(*args)
+        Cli::$branch(parsed_args) => {
+          <$cmd>::try_from((*parsed_args, $raw_args))
             .and_then(|mut cmd| cmd.execute())
             .unwrap_or_else(|_| {
               std::process::exit(1);
@@ -34,11 +34,16 @@ macro_rules! run_command {
 }
 
 pub fn run(args: Vec<String>) {
-  let cli = Cli::parse_from(args);
+  let cli = Cli::parse_from(&args);
 
   // eat the error of setting logger
   if log::set_boxed_logger(Box::new(SimpleLogger)).is_err() {}
   log::set_max_level(log::LevelFilter::Trace);
 
-  run_command!(cli, (New, new::NewCommand), (Build, build::BuildCommand));
+  run_command!(
+    cli,
+    args,
+    (New, new::NewCommand),
+    (Build, build::BuildCommand)
+  );
 }

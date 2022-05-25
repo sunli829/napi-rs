@@ -49,10 +49,10 @@ pub struct NewCommandArgs {
   yes: bool,
 }
 
-impl TryFrom<NewCommandArgs> for NewCommand {
+impl TryFrom<(NewCommandArgs, Vec<String>)> for NewCommand {
   type Error = ();
 
-  fn try_from(args: NewCommandArgs) -> Result<Self, Self::Error> {
+  fn try_from((args, _): (NewCommandArgs, Vec<String>)) -> Result<Self, Self::Error> {
     Ok(Self { args })
   }
 }
